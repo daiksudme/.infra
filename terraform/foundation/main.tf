@@ -1,0 +1,72 @@
+terraform {
+  required_version = "= 1.16.3"
+  required_providers {
+    cloudflare = {
+      source  = "cloudflare/cloudflare"
+      version = "= 5.25.0"
+    }
+  }
+  backend "s3" {
+    bucket                      = "daiksudme-tfstate-foundation"
+    key                         = "terraform.tfstate"
+    region                      = "auto"
+    endpoints                   = { s3 = "https://a1f28decfde7c9df1884714e574d2059.r2.cloudflarestorage.com" }
+    use_path_style              = true
+    use_lockfile                = true
+    skip_credentials_validation = true
+    skip_region_validation      = true
+    skip_requesting_account_id  = true
+    skip_metadata_api_check     = true
+    skip_s3_checksum            = true
+  }
+}
+
+locals {
+  config = jsondecode(file("${path.module}/../../config.json"))
+}
+
+resource "cloudflare_r2_bucket" "state" {
+  for_each      = local.config.buckets
+  account_id    = local.config.account_id
+  name          = each.value
+  storage_class = "Standard"
+  lifecycle {
+    prevent_destroy = true
+  }
+}
+
+resource "cloudflare_r2_managed_domain" "private" {
+  for_each    = cloudflare_r2_bucket.state
+  account_id  = local.config.account_id
+  bucket_name = each.value.name
+  enabled     = false
+}
+
+resource "cloudflare_r2_bucket_lock" "backups" {
+  for_each    = cloudflare_r2_bucket.state
+  account_id  = local.config.account_id
+  bucket_name = each.value.name
+  rules = [{
+    id      = "retain-backups-30-days"
+    prefix  = "backups/"
+    enabled = true
+    condition = {
+      type            = "Age"
+      max_age_seconds = 2592000
+    }
+  }]
+}
+
+resource "cloudflare_r2_bucket_lifecycle" "backups" {
+  for_each    = cloudflare_r2_bucket.state
+  account_id  = local.config.account_id
+  bucket_name = each.value.name
+  rules = [{
+    id         = "expire-backups-after-90-days"
+    enabled    = true
+    conditions = { prefix = "backups/" }
+    delete_objects_transition = {
+      condition = { type = "Age", max_age = 7776000 }
+    }
+  }]
+}
