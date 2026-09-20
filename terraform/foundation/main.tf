@@ -41,32 +41,3 @@ resource "cloudflare_r2_managed_domain" "private" {
   bucket_name = each.value.name
   enabled     = false
 }
-
-resource "cloudflare_r2_bucket_lock" "backups" {
-  for_each    = cloudflare_r2_bucket.state
-  account_id  = local.config.account_id
-  bucket_name = each.value.name
-  rules = [{
-    id      = "retain-backups-30-days"
-    prefix  = "backups/"
-    enabled = true
-    condition = {
-      type            = "Age"
-      max_age_seconds = 2592000
-    }
-  }]
-}
-
-resource "cloudflare_r2_bucket_lifecycle" "backups" {
-  for_each    = cloudflare_r2_bucket.state
-  account_id  = local.config.account_id
-  bucket_name = each.value.name
-  rules = [{
-    id         = "expire-backups-after-90-days"
-    enabled    = true
-    conditions = { prefix = "backups/" }
-    delete_objects_transition = {
-      condition = { type = "Age", max_age = 7776000 }
-    }
-  }]
-}

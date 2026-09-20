@@ -1,7 +1,7 @@
 import { existsSync, mkdirSync, readFileSync, renameSync, writeFileSync } from 'node:fs';
 import { resolve, dirname } from 'node:path';
 import { config, required } from '../lib/config.mjs';
-import { ensureBuckets } from '../lib/state.mjs';
+import { ensureBuckets } from '../lib/buckets.mjs';
 import { bucketApi } from '../lib/cloudflare.mjs';
 
 if (process.argv[2] !== '--apply') {

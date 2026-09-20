@@ -1,7 +1,7 @@
 ---
 type: Guide
 title: 共通state基盤の導入と運用
-description: 非公開R2バケットを初期化し、stateのロック・バックアップ・復元を確認する手順。
+description: 非公開R2バケットを初期化し、stateのロックとアクセス権限を確認する手順。
 sources:
   - id: r2-tokens
     resource: https://developers.cloudflare.com/r2/api/tokens/
@@ -39,7 +39,6 @@ R2は利用登録と規約への同意が必要です。Standardの無料枠内�
 | バケット作成・Terraform設定 | 対象accountだけのWorkers R2 Storage Write。ローカルの`.private/r2-admin.json`へ`CLOUDFLARE_API_TOKEN`として保存 |
 | foundationのstate操作 | foundationバケットだけのObject Read & Write。`.private/foundation.json`へ`AWS_ACCESS_KEY_ID`・`AWS_SECRET_ACCESS_KEY`として保存 |
 | apexのstate操作 | apexバケットだけの別のObject Read & Write資格情報。apex側で管理し、通常のアプリ配信へ渡さない |
-| foundation日次backup | GitHub Environment `state-foundation`の`R2_ACCESS_KEY_ID`・`R2_SECRET_ACCESS_KEY`。foundationのS3資格情報を使用 |
 
 R2のS3資格情報はバケット作成後に、対象バケットを限定して作成します。通常のS3資格情報でバケット設定の変更は行いません。R2のObject Read & Writeはバケット内の現行state・lockも変更可能なので、prefix単位に権限が分離できているとは扱いません。[^r2-tokens]
 
@@ -77,7 +76,7 @@ mise exec -- node scripts/with-secrets.mjs .private/foundation-iac.json terrafor
 mise exec -- node scripts/with-secrets.mjs .private/foundation-iac.json terraform -chdir=terraform/foundation import 'cloudflare_r2_bucket.state["apex"]' 'a1f28decfde7c9df1884714e574d2059/daiksudme-tfstate-apex/default'
 ```
 
-foundationのstateはこの時点からR2へ保存されます。lock/lifecycle/r2.dev設定はproviderがimportをサポートしないため、初回planで作成・管理します。
+foundationのstateはこの時点からR2へ保存されます。r2.dev設定はproviderがimportをサポートしないため、初回planで無効化・管理します。
 
 ## planとapply
 
@@ -86,28 +85,19 @@ mise exec -- node scripts/with-secrets.mjs .private/foundation-iac.json terrafor
 mise exec -- node scripts/with-secrets.mjs .private/foundation-iac.json node scripts/state.mjs apply foundation .private/foundation.tfplan
 ```
 
-planはローカルの保護された作業場所で確認します。公開のCIログやartifactへアップロードしません。`TF_DATA_DIR`・`TF_CLI_ARGS*`による実行環境の上書きは拒否します。applyは選択中のworkspaceが`default`であること、同じbackend・ロック検証記録を確認し、削除・無関係なリソース・公開設定・保持期間の変更を拒否します。適用前のbackup失敗ではapplyせず、適用失敗時も部分更新後のstateをbackupします。適用ログは`.private/`だけに残します。
+planはローカルの保護された作業場所で確認します。公開のCIログやartifactへアップロードしません。`TF_DATA_DIR`・`TF_CLI_ARGS*`による実行環境の上書きは拒否します。applyは選択中のworkspaceが`default`であること、同じbackend・ロック検証記録を確認し、削除・無関係なリソース・公開設定を拒否します。適用ログは`.private/`だけに残し、Terraformの失敗を成功扱いしません。
 
-現行state・`.tflock`は上書き・削除できなければTerraformが動かないため、保持ロック対象にしません。`backups/日付/lineage/serial-hash.tfstate`だけを30日保護し、90日で削除します。同一日の同一内容は再利用し、内容が異なる既存backupは拒否します。
+stateはR2の現行データだけを管理します。独自のバックアップ、世代保存、保持ロック、lifecycle、日次ジョブは設けません。現行stateと`.tflock`の上書き・削除はTerraformが行います。
 
-## 実環境の保全検証と日次backup
+## 実環境のアクセス検証
 
 ```sh
 mise exec -- node scripts/with-secrets.mjs .private/foundation-iac.json node scripts/verify-state.mjs foundation
-mise exec -- node scripts/configure-backup.mjs prepare
 ```
 
-保全検証は匿名アクセス拒否、他の3バケットへのアクセス拒否、使い捨てstateのbackup保護・復元を確認します。保持ロックを確認するため、小さなテストbackupは残り、90日lifecycleで削除されます。実際の現行stateを破壊・復元する試験ではありません。
+匿名アクセス拒否、他の3バケットへのアクセス拒否、自分の使い捨てデータの書込・読戻し・削除を確認します。実stateを書き換えず、検証用データだけを削除します。apexも自分のバケット限定資格情報で実検証し、共通stateへアクセスしません。family向けのアプリ運用は別途準備します。
 
-`prepare`はGitHubの既存認証でmain限定Environmentを用意します。既存の保護が異なる場合は上書きせず停止します。利用者がEnvironmentへS3秘密値を登録し、両実検証が成功した後だけ有効化します。
-
-```sh
-mise exec -- node scripts/configure-backup.mjs enable
-```
-
-日次backupはUTC 02:23に実行し、applyがなくても90日分の世代を維持します。失敗時はActionsの通知と実行結果を確認してください。apex側も自分のバケット限定資格情報で同じ日次保全を行い、共通stateへアクセスしません。family向け運用は別途準備します。
-
-`.private/`の検証記録は再実行を防ぐためのローカル記録であり、署名付きの証明ではありません。Issueには実行結果・対象版・時刻を記録し、ファイルの存在だけで実検証済みと扱いません。
+`.private/`のロック検証記録はローカルの確認記録であり、署名付きの証明ではありません。Issueには実行結果・対象版・時刻を記録し、ファイルの存在だけで実検証済みと扱いません。
 
 [^r2-tokens]: Cloudflare公式のR2資格情報とバケット制限。
 [^state-lock]: Terraform公式S3 backend。R2との実互換性は使い捨てstateによる排他試験で確認する。
