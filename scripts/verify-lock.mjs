@@ -6,9 +6,11 @@ import { spawn, spawnSync } from 'node:child_process';
 import { once } from 'node:events';
 import { GetObjectCommand, DeleteObjectCommand } from '@aws-sdk/client-s3';
 import { config, bucketFor, stateClient, endpoint } from '../lib/config.mjs';
+import { checkTerraformEnvironment } from '../lib/backend.mjs';
 import { lockProbe } from '../lib/probe.mjs';
 
 // All remote writes use a fresh disposable key, never the production state key.
+checkTerraformEnvironment();
 const state = process.argv[2];
 const bucket = bucketFor(state);
 const key = `validation/${randomUUID()}/terraform.tfstate`;

@@ -29,3 +29,9 @@ test('rejects a non-default workspace before backing up or applying a different 
   assert.throws(() => checkBackend(backend, 'foundation', 'other'), /workspace/);
   assert.doesNotThrow(() => checkBackend(backend, 'foundation', 'default'));
 });
+
+test('rejects Terraform data-directory and CLI overrides that bypass backend or locking checks', async () => {
+  const { checkTerraformEnvironment } = await import('../lib/backend.mjs');
+  for (const env of [{ TF_DATA_DIR: '/tmp/other' }, { TF_CLI_ARGS: '-lock=false' }, { TF_CLI_ARGS_apply: '-lock=false' }, { TF_WORKSPACE: 'other' }]) assert.throws(() => checkTerraformEnvironment(env), /Terraform environment/);
+  assert.doesNotThrow(() => checkTerraformEnvironment({ TF_WORKSPACE: 'default' }));
+});

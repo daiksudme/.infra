@@ -5,7 +5,7 @@ import { randomUUID } from 'node:crypto';
 import { execFileSync, spawnSync } from 'node:child_process';
 import { bucketFor, stateClient } from '../lib/config.mjs';
 import { backupState, applyWithBackups } from '../lib/state.mjs';
-import { checkBackend, checkPlan, checkLockProof } from '../lib/backend.mjs';
+import { checkBackend, checkPlan, checkLockProof, checkTerraformEnvironment } from '../lib/backend.mjs';
 
 let client;
 async function main() {
@@ -17,6 +17,7 @@ async function main() {
     return 0;
   }
   if (command !== 'apply' || state !== 'foundation' || !planFile) throw new Error('Usage: state.mjs backup STATE | apply foundation PLAN');
+  checkTerraformEnvironment();
   const root = fileURLToPath(new URL('../terraform/foundation/', import.meta.url));
   checkLockProof(JSON.parse(readFileSync(new URL('../.private/lock-foundation.json', import.meta.url), 'utf8')), state);
   const plan = resolve(planFile);
