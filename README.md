@@ -86,7 +86,7 @@ mise exec -- node scripts/with-secrets.mjs .private/foundation-iac.json terrafor
 mise exec -- node scripts/with-secrets.mjs .private/foundation-iac.json node scripts/state.mjs apply foundation .private/foundation.tfplan
 ```
 
-planはローカルの保護された作業場所で確認します。公開のCIログやartifactへアップロードしません。applyは同じbackend・ロック検証記録を確認し、削除・無関係なリソース・公開設定・保持期間の変更を拒否します。適用前のbackup失敗ではapplyせず、適用失敗時も部分更新後のstateをbackupします。適用ログは`.private/`だけに残します。
+planはローカルの保護された作業場所で確認します。公開のCIログやartifactへアップロードしません。applyは選択中のworkspaceが`default`であること、同じbackend・ロック検証記録を確認し、削除・無関係なリソース・公開設定・保持期間の変更を拒否します。適用前のbackup失敗ではapplyせず、適用失敗時も部分更新後のstateをbackupします。適用ログは`.private/`だけに残します。
 
 現行state・`.tflock`は上書き・削除できなければTerraformが動かないため、保持ロック対象にしません。`backups/日付/lineage/serial-hash.tfstate`だけを30日保護し、90日で削除します。同一日の同一内容は再利用し、内容が異なる既存backupは拒否します。
 

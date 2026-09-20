@@ -6,9 +6,9 @@ const backend = { type: 's3', config: { bucket: 'daiksudme-tfstate-foundation', 
 
 test('rejects a wrong state bucket, endpoint, key, or disabled locking', () => {
   for (const patch of [{ bucket: 'other' }, { key: 'other' }, { endpoints: { s3: 'https://example.test' } }, { use_lockfile: false }]) {
-    assert.throws(() => checkBackend({ ...backend, config: { ...backend.config, ...patch } }, 'foundation'), /backend/);
+    assert.throws(() => checkBackend({ ...backend, config: { ...backend.config, ...patch } }, 'foundation', 'default'), /backend/);
   }
-  assert.doesNotThrow(() => checkBackend(backend, 'foundation'));
+  assert.doesNotThrow(() => checkBackend(backend, 'foundation', 'default'));
 });
 
 test('refuses state destruction, unrelated resources, public access and changed retention', () => {
@@ -23,4 +23,9 @@ test('normal apply requires a lock verification for the same account, bucket and
   const { checkLockProof } = await import('../lib/backend.mjs');
   assert.throws(() => checkLockProof({}, 'foundation'), /verification/);
   assert.doesNotThrow(() => checkLockProof({ account: config.account_id, bucket: 'daiksudme-tfstate-foundation', endpoint, terraform: '1.16.3', result: 'passed' }, 'foundation'));
+});
+
+test('rejects a non-default workspace before backing up or applying a different state', () => {
+  assert.throws(() => checkBackend(backend, 'foundation', 'other'), /workspace/);
+  assert.doesNotThrow(() => checkBackend(backend, 'foundation', 'default'));
 });

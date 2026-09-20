@@ -20,7 +20,8 @@ async function main() {
   const root = fileURLToPath(new URL('../terraform/foundation/', import.meta.url));
   checkLockProof(JSON.parse(readFileSync(new URL('../.private/lock-foundation.json', import.meta.url), 'utf8')), state);
   const plan = resolve(planFile);
-  checkBackend(JSON.parse(readFileSync(resolve(root, '.terraform/terraform.tfstate'), 'utf8')).backend, state);
+  const workspace = execFileSync('terraform', [`-chdir=${root}`, 'workspace', 'show'], { encoding: 'utf8', stdio: ['ignore', 'pipe', 'pipe'] }).trim();
+  checkBackend(JSON.parse(readFileSync(resolve(root, '.terraform/terraform.tfstate'), 'utf8')).backend, state, workspace);
   const json = execFileSync('terraform', [`-chdir=${root}`, 'show', '-json', plan], { encoding: 'utf8', stdio: ['ignore', 'pipe', 'pipe'], maxBuffer: 32 * 1024 * 1024 });
   checkPlan(JSON.parse(json));
   const logDirectory = fileURLToPath(new URL('../.private/', import.meta.url));
