@@ -35,4 +35,12 @@ for change in '.check_runs[0].conclusion = "failure"' '.check_runs = []' '.check
  bash "$ROOT/.github/scripts/approve.sh"
  test ! -f "$WORK/approved"
 done
-echo 'Approval eligibility cases passed.'
+valid
+cp "$ROOT/.github/required-checks.json" "$WORK/required.json"
+# Use an isolated copy so this test never edits the checkout.
+mkdir -p "$WORK/repo/.github/scripts"
+cp "$ROOT/.github/scripts/approve.sh" "$WORK/repo/.github/scripts/approve.sh"
+printf '[]' > "$WORK/repo/.github/required-checks.json"
+if bash "$WORK/repo/.github/scripts/approve.sh"; then echo 'Empty checks were accepted' >&2; exit 1; fi
+test ! -f "$WORK/approved"
+echo 'Approval eligibility cases passed.' 

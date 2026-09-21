@@ -13,9 +13,10 @@ pr=$(gh api "repos/$GITHUB_REPOSITORY/pulls/$number")
 jq -e --arg repo "$GITHUB_REPOSITORY" 'select(.state == "open" and .draft == false and .user.login == "daiksud" and .user.id == 155234749 and .base.ref == "main" and .base.repo.full_name == $repo)' <<< "$pr" >/dev/null || exit 0
 sha=$(jq -er '.head.sha | select(test("^[a-f0-9]{40}$"))' <<< "$pr")
 checks=$(gh api "repos/$GITHUB_REPOSITORY/commits/$sha/check-runs?per_page=100")
+required=$(jq -er 'select(type == "array" and length > 0 and all(.[]; type == "string" and length > 0)) | .[]' "$ROOT/.github/required-checks.json")
 while IFS= read -r name; do
   jq -e --arg name "$name" --arg sha "$sha" '[.check_runs[] | select(.name == $name and .app.id == 15368 and .head_sha == $sha)] | sort_by(.id) | last | select(.status == "completed" and .conclusion == "success")' <<< "$checks" >/dev/null || exit 0
-done < <(jq -er '.[]' "$ROOT/.github/required-checks.json")
+done <<< "$required"
 reviews=$(gh api "repos/$GITHUB_REPOSITORY/pulls/$number/reviews?per_page=100")
 if jq -e --arg sha "$sha" 'any(.[]; .user.login == "github-actions[bot]" and .state == "APPROVED" and .commit_id == $sha)' <<< "$reviews" >/dev/null; then exit 0; fi
 # Re-read immediately before approving so a concurrent push cannot inherit approval.
