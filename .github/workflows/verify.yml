@@ -40,6 +40,7 @@ jobs:
           path: ${{ runner.temp }}/terraform-maintenance.patch
           retention-days: 7
       - run: bash .github/tests/approve.sh
+      - run: bash .github/tests/foundation.sh
       - run: shellcheck .github/scripts/*.sh .github/tests/*.sh
       - run: terraform fmt -check -recursive
       - run: terraform -chdir=terraform/foundation init -backend=false -lockfile=readonly

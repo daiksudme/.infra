@@ -1,0 +1,106 @@
+name: PR foundation
+on:
+  workflow_run:
+    workflows: [Verify]
+    types: [completed]
+permissions:
+  contents: read
+concurrency:
+  group: pr-foundation-${{ github.event.workflow_run.pull_requests[0].number || github.run_id }}
+  cancel-in-progress: false
+jobs:
+  source:
+    if: github.event.workflow_run.event == 'pull_request'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    permissions:
+      contents: read
+      checks: write
+      pull-requests: read
+    outputs:
+      number: ${{ steps.source.outputs.number }}
+      sha: ${{ steps.source.outputs.sha }}
+      check: ${{ steps.source.outputs.check }}
+      eligible: ${{ steps.source.outputs.eligible }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: ${{ github.sha }}
+          persist-credentials: false
+      - id: source
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          PR_NUMBER=$(jq -er '.workflow_run.pull_requests | select(length == 1) | .[0].number' "$GITHUB_EVENT_PATH")
+          PR_HEAD=$(jq -er '.workflow_run.head_sha' "$GITHUB_EVENT_PATH")
+          [[ $PR_NUMBER =~ ^[1-9][0-9]*$ && $PR_HEAD =~ ^[a-f0-9]{40}$ ]]
+          export PR_NUMBER PR_HEAD
+          check=$(gh api "repos/$GITHUB_REPOSITORY/check-runs" -f name=terraform-plan -f head_sha="$PR_HEAD" -f status=in_progress --jq .id)
+          echo "check=$check" >> "$GITHUB_OUTPUT"
+          echo "number=$PR_NUMBER" >> "$GITHUB_OUTPUT"
+          echo "sha=$PR_HEAD" >> "$GITHUB_OUTPUT"
+          if jq -e '.workflow_run.conclusion == "success"' "$GITHUB_EVENT_PATH" >/dev/null && bash .github/scripts/foundation-guard.sh; then
+            echo 'eligible=true' >> "$GITHUB_OUTPUT"
+          fi
+  plan:
+    needs: source
+    if: needs.source.outputs.eligible == 'true'
+    environment: foundation-operations
+    concurrency:
+      group: foundation-state
+      cancel-in-progress: false
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    permissions:
+      contents: read
+      pull-requests: read
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: ${{ github.sha }}
+          persist-credentials: false
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: ${{ needs.source.outputs.sha }}
+          path: candidate
+          persist-credentials: false
+      - uses: ./.github/actions/foundation
+        with:
+          operation: plan
+          directory: candidate/terraform/foundation
+        env:
+          GH_TOKEN: ${{ github.token }}
+          PR_NUMBER: ${{ needs.source.outputs.number }}
+          PR_HEAD: ${{ needs.source.outputs.sha }}
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          AWS_ACCESS_KEY_ID: ${{ secrets.R2_ACCESS_KEY_ID }}
+          AWS_SECRET_ACCESS_KEY: ${{ secrets.R2_SECRET_ACCESS_KEY }}
+  report:
+    needs: [source, plan]
+    if: always() && needs.source.outputs.check != ''
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    permissions:
+      contents: read
+      checks: write
+      pull-requests: write
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: ${{ github.sha }}
+          persist-credentials: false
+      - env:
+          GH_TOKEN: ${{ github.token }}
+          CHECK_ID: ${{ needs.source.outputs.check }}
+          RESULT: ${{ needs.plan.result }}
+        run: |
+          set -euo pipefail
+          [[ $CHECK_ID =~ ^[0-9]+$ ]]
+          conclusion=failure
+          if [[ $RESULT == success ]]; then conclusion=success; fi
+          gh api "repos/$GITHUB_REPOSITORY/check-runs/$CHECK_ID" --method PATCH -f status=completed -f conclusion="$conclusion" >/dev/null
+      - if: needs.plan.result == 'success'
+        run: bash .github/scripts/approve.sh
+        env:
+          GH_TOKEN: ${{ github.token }}

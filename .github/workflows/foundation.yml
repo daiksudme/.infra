@@ -1,5 +1,9 @@
 name: Foundation
 on:
+  workflow_run:
+    workflows: [Verify]
+    types: [completed]
+    branches: [main]
   workflow_dispatch:
     inputs:
       operation:
@@ -9,58 +13,31 @@ on:
         required: true
 permissions:
   contents: read
+  actions: read
 concurrency:
   group: foundation-state
   cancel-in-progress: false
 jobs:
   foundation:
-    if: github.ref == 'refs/heads/main'
+    if: >-
+      github.ref == 'refs/heads/main' &&
+      (github.event_name == 'workflow_dispatch' ||
+      (github.event.workflow_run.event == 'push' &&
+      github.event.workflow_run.conclusion == 'success' &&
+      github.event.workflow_run.head_sha == github.sha))
     environment: foundation-operations
     runs-on: ubuntu-24.04
     timeout-minutes: 20
-    env:
-      TF_INPUT: 'false'
-      TF_IN_AUTOMATION: 'true'
-      TF_WORKSPACE: default
-    defaults:
-      run:
-        shell: bash
-        working-directory: terraform/foundation
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           ref: ${{ github.sha }}
           persist-credentials: false
-      - uses: hashicorp/setup-terraform@dfe3c3f87815947d99a8997f908cb6525fc44e9e # v4.0.1
+      - uses: ./.github/actions/foundation
         with:
-          terraform_version: 1.16.3
-          terraform_wrapper: false
-      - name: Plan and optionally apply
+          operation: ${{ github.event_name == 'workflow_run' && 'apply' || inputs.operation }}
         env:
-          OPERATION: ${{ inputs.operation }}
           GH_TOKEN: ${{ github.token }}
           CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
           AWS_ACCESS_KEY_ID: ${{ secrets.R2_ACCESS_KEY_ID }}
           AWS_SECRET_ACCESS_KEY: ${{ secrets.R2_SECRET_ACCESS_KEY }}
-        run: |
-          set -euo pipefail
-          case "$OPERATION" in plan|apply) ;; *) echo "Choose plan or apply"; exit 1 ;; esac
-          export TF_DATA_DIR="$RUNNER_TEMP/foundation-data"
-          PRIVATE_DIR="$RUNNER_TEMP/foundation-private"
-          umask 077
-          mkdir -p "$PRIVATE_DIR"
-          : "${CLOUDFLARE_API_TOKEN:?}" "${AWS_ACCESS_KEY_ID:?}" "${AWS_SECRET_ACCESS_KEY:?}"
-          test "$GITHUB_SHA" = "$(gh api "repos/$GITHUB_REPOSITORY/git/ref/heads/main" --jq .object.sha)"
-          terraform init -reconfigure -lockfile=readonly > "$PRIVATE_DIR/init.log" 2>&1 || { echo 'Terraform init failed; diagnostics are private.'; exit 1; }
-          code=0
-          terraform plan -detailed-exitcode -out="$PRIVATE_DIR/plan" > "$PRIVATE_DIR/plan.log" 2>&1 || code=$?
-          case "$code" in
-            0) echo 'Terraform plan: no changes.' ;;
-            2) echo 'Terraform plan: changes present (including any initial imports).' ;;
-            *) echo 'Terraform plan failed; diagnostics are private.'; exit "$code" ;;
-          esac
-          if [[ "$OPERATION" == apply ]]; then
-            test "$GITHUB_SHA" = "$(gh api "repos/$GITHUB_REPOSITORY/git/ref/heads/main" --jq .object.sha)"
-            terraform apply "$PRIVATE_DIR/plan" > "$PRIVATE_DIR/apply.log" 2>&1 || { echo 'Terraform apply failed; diagnostics are private.'; exit 1; }
-            echo 'Terraform apply completed.'
-          fi

@@ -49,3 +49,9 @@ familyのアプリ認証、DNSとCustom Domainはこの変更に含めない。
 [^terraform-s3]: Terraform S3 backendのuse_lockfile。
 [^r2-compatibility]: R2のS3 API対応表。条件付きPutObjectを参照。
 [^r2-locks]: 初期案で参照したR2 Bucket locks。現行構成では採用しない。
+
+## PR検証と自動適用
+
+PRのTerraform planとmainのapplyをActions上で直列化する。実planはdaiksudが管理する同repoの最新PRだけに資格情報を渡し、外部PRには渡さない。planは外部データソースやproviderを実行し得るため、資格情報なしのVerify成功だけを信頼の根拠にしない。
+
+mainへの統合後はVerify成功に連動してplan・保存planのapply・再planを行う。EnvironmentのRequired reviewersは廃止し、main限定条件・標準stateロック・最新SHA確認・資格情報の分離を維持する。PRには差分の有無だけを報告し、state・plan本文・診断ログを公開しない。
