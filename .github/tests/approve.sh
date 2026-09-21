@@ -16,6 +16,7 @@ case "$2" in
    touch "$FIXTURES/read" ;;
 
  */git/ref/heads/main) echo "${MAIN_SHA:-$GITHUB_SHA}" ;;
+ */rules/branches/main) printf '[{"type":"pull_request","parameters":{"dismiss_stale_reviews_on_push":%s}}]' "${DISMISS_STALE:-true}" ;;
  */compare/*) echo "${MERGE_BASE:-$GITHUB_SHA}" ;;
  */check-runs*) cat "$FIXTURES/checks.json" ;;
  */reviews*) if [[ $* == *APPROVE* ]]; then touch "$FIXTURES/approved"; else echo '[]'; fi ;;
@@ -63,5 +64,10 @@ valid
 export GITHUB_EVENT_NAME=workflow_run
 printf '{"workflow_run":{"event":"workflow_dispatch","path":".github/workflows/verify.yml","conclusion":"success","head_sha":"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa","pull_requests":[{"number":7}]}}' > "$GITHUB_EVENT_PATH"
 bash "$ROOT/.github/scripts/approve.sh"
+test ! -f "$WORK/approved"
+valid
+export GITHUB_EVENT_NAME=pull_request_target
+printf '{"pull_request":{"number":7}}' > "$GITHUB_EVENT_PATH"
+if DISMISS_STALE=false bash "$ROOT/.github/scripts/approve.sh"; then echo 'Missing stale-review protection was accepted' >&2; exit 1; fi
 test ! -f "$WORK/approved"
 echo 'Approval eligibility cases passed.'

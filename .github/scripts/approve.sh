@@ -22,6 +22,8 @@ required=$(jq -er 'select(type == "array" and length > 0 and all(.[]; type == "s
 while IFS= read -r name; do
   jq -e --arg name "$name" --arg sha "$sha" '[.check_runs[] | select(.name == $name and .app.id == 15368 and .head_sha == $sha)] | sort_by(.id) | last | select(.status == "completed" and .conclusion == "success")' <<< "$checks" >/dev/null || exit 0
 done <<< "$required"
+# Review creation has no compare-and-swap option; require native stale-review protection.
+gh api "repos/$GITHUB_REPOSITORY/rules/branches/main" | jq -e 'any(.[]; .type == "pull_request" and .parameters.dismiss_stale_reviews_on_push == true)' >/dev/null
 reviews=$(gh api "repos/$GITHUB_REPOSITORY/pulls/$number/reviews?per_page=100")
 if jq -e --arg sha "$sha" 'any(.[]; .user.login == "github-actions[bot]" and .state == "APPROVED" and .commit_id == $sha)' <<< "$reviews" >/dev/null; then exit 0; fi
 # Re-read immediately before approving so a concurrent push cannot inherit approval.
