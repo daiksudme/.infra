@@ -22,8 +22,6 @@ jobs:
       TF_INPUT: 'false'
       TF_IN_AUTOMATION: 'true'
       TF_WORKSPACE: default
-      TF_DATA_DIR: ${{ runner.temp }}/foundation-data
-      PRIVATE_DIR: ${{ runner.temp }}/foundation-private
     defaults:
       run:
         shell: bash
@@ -46,6 +44,8 @@ jobs:
           AWS_SECRET_ACCESS_KEY: ${{ secrets.R2_SECRET_ACCESS_KEY }}
         run: |
           set -euo pipefail
+          export TF_DATA_DIR="$RUNNER_TEMP/foundation-data"
+          PRIVATE_DIR="$RUNNER_TEMP/foundation-private"
           umask 077
           mkdir -p "$PRIVATE_DIR"
           test -n "$CLOUDFLARE_API_TOKEN" && test -n "$AWS_ACCESS_KEY_ID" && test -n "$AWS_SECRET_ACCESS_KEY"
