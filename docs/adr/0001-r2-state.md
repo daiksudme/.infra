@@ -47,5 +47,5 @@ CIではTerraformのnative mock testと標準検証を行う。R2の条件付き
 familyのアプリ認証、DNSとCustom Domainはこの変更に含めない。
 
 [^terraform-s3]: Terraform S3 backendのuse_lockfile。
-[^r2-locks]: 初期案で参照したR2 Bucket locks。現行構成では採用しない。
 [^r2-compatibility]: R2のS3 API対応表。条件付きPutObjectを参照。
+[^r2-locks]: 初期案で参照したR2 Bucket locks。現行構成では採用しない。
