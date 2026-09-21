@@ -68,3 +68,9 @@ gh workflow run verify.yml --repo daiksudme/.infra --ref main -f operation=lock
 
 [^r2-tokens]: Cloudflare公式のR2資格情報とバケット制限。
 [^state-lock]: Terraform S3 backendの標準排他ロック。
+
+## PRの承認とmain保護
+
+CODEOWNERSはdaiksudです。mainのRulesetは`.github/main-ruleset.json`を正本とし、PR・承認1件・Code Ownerレビュー・必須検証・未解決スレッド解消を要求します。直接push・force push・main削除・bypassを許可しません。作業ブランチはこのRulesetの対象外です。
+
+GitHub Actionsの「Allow GitHub Actions to create and approve pull requests」を有効にします。Owner approvalはmainのコードからメタデータだけを読み、daiksudの非Draft PRの最新SHAについて`.github/required-checks.json`の検証成功後にApproveします。別の投稿者や失敗・未実行の検証は承認しません。実設定の適用とCode Owner本人のPRのマージ可否は、CIとは別に実PRで確認します。
