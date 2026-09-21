@@ -1,0 +1,9 @@
+{
+  "can_admins_bypass": false,
+  "prevent_self_review": false,
+  "reviewers": [{ "type": "User", "id": 155234749 }],
+  "deployment_branch_policy": {
+    "protected_branches": false,
+    "custom_branch_policies": true
+  }
+}

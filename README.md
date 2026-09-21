@@ -15,6 +15,42 @@ sources:
 
 このリポジトリのCIは秘密値なしで単体・Terraform mock検証を行います。R2の実検証と通常applyは利用登録・資格情報の準備後に行います。family認証、DNS、Custom Domainはまだ管理しません。
 
+## GitHub Actionsからの管理
+
+通常の取り込みと変更は、mainの手動workflow `Foundation`から行います。作成済み4バケットの所有メタデータは`foundation-buckets.json`に記録しています。account・バケット名・作成日時だけを含み、資格情報やTerraform stateは含みません。実APIとの一致と非公開設定を確認し、欠落・再作成・不一致では停止します。
+
+`daiksudme/.infra`を管理できる`gh`認証で、`foundation-operations` Environmentの有無を確認してください。未作成の場合だけ次を実行します。既存の保護設定は上書きせず確認します。
+
+```sh
+gh api repos/daiksudme/.infra/environments/foundation-operations --method PUT --input .github/foundation-environment.json
+gh api repos/daiksudme/.infra/environments/foundation-operations/deployment-branch-policies --method POST --input .github/foundation-branch.json
+```
+
+設定はmain限定・daiksud承認必須・管理者bypass無効です。次のコマンドの対話入力で、R2管理トークンとfoundationバケット限定のS3資格情報を登録します。秘密値をコマンド本文やチャットへ書きません。
+
+```sh
+gh secret set CLOUDFLARE_API_TOKEN --repo daiksudme/.infra --env foundation-operations
+gh secret set R2_ACCESS_KEY_ID --repo daiksudme/.infra --env foundation-operations
+gh secret set R2_SECRET_ACCESS_KEY --repo daiksudme/.infra --env foundation-operations
+```
+
+| operation | 実行内容 |
+| --- | --- |
+| `import` | 作成済みバケットをremote stateへ取り込み、planを検査する。途中失敗後は未取り込み分だけを処理する |
+| `plan` | 4バケットの取り込み済みIDを照合し、変更内容を検査する |
+| `apply` | 同じ検査後、保存したplanを既存のガード付き経路で適用する |
+
+初回は`import`、次に`apply`をそれぞれ実行してEnvironment承認を行います。以後は`plan`で確認してから`apply`します。apply実行時には新しいplanを作成・検査し、その同じplanを適用します。
+
+```sh
+gh workflow run foundation.yml --repo daiksudme/.infra --ref main -f operation=import
+gh run list --repo daiksudme/.infra --workflow foundation.yml
+```
+
+すべての操作でS3の匿名・他stateアクセス拒否とTerraform排他を実検証します。workflow間は`foundation-state`で排他し、実行中の操作を自動キャンセルしません。importとapplyの直前に最新mainを再取得し、古いSHAでは変更しません。
+
+state・plan・Terraform診断ログはrunnerの`.private/`内だけで扱い、artifactへ保存しません。公開結果は許可されたリソースの識別子と操作だけです。失敗時は段階を報告し、必要なら権限を持つ担当者が下記ローカル手順で診断します。stateバックアップは作りません。
+
 ## ローカル検証
 
 ```sh
