@@ -22,14 +22,21 @@ terraform {
 }
 
 locals {
-  config = jsondecode(file("${path.module}/../../config.json"))
+  account_id = "a1f28decfde7c9df1884714e574d2059"
+  buckets = {
+    foundation = "daiksudme-tfstate-foundation"
+    domains    = "daiksudme-tfstate-domains"
+    family     = "daiksudme-tfstate-family"
+    apex       = "daiksudme-tfstate-apex"
+  }
 }
 
 resource "cloudflare_r2_bucket" "state" {
-  for_each      = local.config.buckets
-  account_id    = local.config.account_id
+  for_each      = local.buckets
+  account_id    = local.account_id
   name          = each.value
   storage_class = "Standard"
+  jurisdiction  = "default"
   lifecycle {
     prevent_destroy = true
   }
@@ -37,7 +44,13 @@ resource "cloudflare_r2_bucket" "state" {
 
 resource "cloudflare_r2_managed_domain" "private" {
   for_each    = cloudflare_r2_bucket.state
-  account_id  = local.config.account_id
+  account_id  = local.account_id
   bucket_name = each.value.name
   enabled     = false
+}
+
+import {
+  for_each = local.buckets
+  to       = cloudflare_r2_bucket.state[each.key]
+  id       = "${local.account_id}/${each.value}/default"
 }

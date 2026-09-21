@@ -8,4 +8,3 @@ description: 共通基盤の所有・排他・保全で使う語の意味。
 | --- | --- | --- | --- |
 | state | Terraformの管理対象と実リソースの対応を保持する非公開データ | 各root module | terraform.tfstate |
 | state lock | 同じstateへの並行適用を防ぐ、一時的な排他 | Terraform backend | .tflock、use_lockfile |
-| bootstrap receipt | この処理が作ったバケットと作成日時の記録 | 初回構築 | bootstrap-receipt.json |

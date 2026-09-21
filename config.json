@@ -1,9 +1,0 @@
-{
-  "account_id": "a1f28decfde7c9df1884714e574d2059",
-  "buckets": {
-    "foundation": "daiksudme-tfstate-foundation",
-    "domains": "daiksudme-tfstate-domains",
-    "family": "daiksudme-tfstate-family",
-    "apex": "daiksudme-tfstate-apex"
-  }
-}

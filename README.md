@@ -11,22 +11,21 @@ sources:
 
 ## 管理範囲
 
-`.infra`はR2の保管基盤を所有します。`config.json`がCloudflareアカウントと4つのバケット名の正本です。各サイトのWorkerやアプリのstate内容は各サイトが所有します。[管理契約](docs/adr/0001-r2-state.md)を参照してください。
+`.infra`は非公開R2バケット4個をTerraformで管理します。各サイトのstate内容は各サイトが所有します。アカウントとバケット名はTerraformのlocalsに定義し、作成済みバケットは`import`ブロックで初回apply時に取り込みます。[管理契約](docs/adr/0001-r2-state.md)を参照してください。
 
-このリポジトリのCIは秘密値なしで単体・Terraform mock検証を行います。R2の実検証と通常applyは利用登録・資格情報の準備後に行います。family認証、DNS、Custom Domainはまだ管理しません。
+自作JavaScript、Node.js、pnpmは使用しません。Terraform 1.16.3とCloudflare provider 5.25.0を固定し、Terraformの実行は検証・整形・lock更新を含めすべてGitHub Actionsで行います。
 
-## GitHub Actionsからの管理
+## 初期投入する資格情報
 
-通常の取り込みと変更は、mainの手動workflow `Foundation`から行います。作成済み4バケットの所有メタデータは`foundation-buckets.json`に記録しています。account・バケット名・作成日時だけを含み、資格情報やTerraform stateは含みません。実APIとの一致と非公開設定を確認し、欠落・再作成・不一致では停止します。
+R2の利用登録と規約同意は利用者が行います。Standard無料枠内を基本とし、超過が見込まれる変更は適用前に確認します。
 
-`daiksudme/.infra`を管理できる`gh`認証で、`foundation-operations` Environmentの有無を確認してください。未作成の場合だけ次を実行します。既存の保護設定は上書きせず確認します。
+| Environment `foundation-operations`のSecret | 用途 |
+| --- | --- |
+| `CLOUDFLARE_API_TOKEN` | 対象accountのWorkers R2 Storage Write。バケット設定用 |
+| `R2_ACCESS_KEY_ID` | foundationバケット限定Object Read & WriteのAccess Key ID |
+| `R2_SECRET_ACCESS_KEY` | 同じS3資格情報のSecret Access Key |
 
-```sh
-gh api repos/daiksudme/.infra/environments/foundation-operations --method PUT --input .github/foundation-environment.json
-gh api repos/daiksudme/.infra/environments/foundation-operations/deployment-branch-policies --method POST --input .github/foundation-branch.json
-```
-
-設定はmain限定・daiksud承認必須・管理者bypass無効です。次のコマンドの対話入力で、R2管理トークンとfoundationバケット限定のS3資格情報を登録します。秘密値をコマンド本文やチャットへ書きません。
+state用の資格情報はバケット単位に分離します。Object Read & Writeはprefix単位の分離ではありません。[^r2-tokens]
 
 ```sh
 gh secret set CLOUDFLARE_API_TOKEN --repo daiksudme/.infra --env foundation-operations
@@ -34,106 +33,38 @@ gh secret set R2_ACCESS_KEY_ID --repo daiksudme/.infra --env foundation-operatio
 gh secret set R2_SECRET_ACCESS_KEY --repo daiksudme/.infra --env foundation-operations
 ```
 
-| operation | 実行内容 |
-| --- | --- |
-| `import` | 作成済みバケットをremote stateへ取り込み、planを検査する。途中失敗後は未取り込み分だけを処理する |
-| `plan` | 4バケットの取り込み済みIDを照合し、変更内容を検査する |
-| `apply` | 同じ検査後、保存したplanを既存のガード付き経路で適用する |
-
-初回は`import`、次に`apply`をそれぞれ実行してEnvironment承認を行います。以後は`plan`で確認してから`apply`します。apply実行時には新しいplanを作成・検査し、その同じplanを適用します。
+Environmentはmain限定・daiksud承認必須・管理者bypass無効です。未作成の場合だけ、管理権限を持つ`gh`認証で次を実行します。既存の保護は上書きしません。
 
 ```sh
-gh workflow run foundation.yml --repo daiksudme/.infra --ref main -f operation=import
-gh run list --repo daiksudme/.infra --workflow foundation.yml
+gh api repos/daiksudme/.infra/environments/foundation-operations --method PUT --input .github/foundation-environment.json
+gh api repos/daiksudme/.infra/environments/foundation-operations/deployment-branch-policies --method POST --input .github/foundation-branch.json
 ```
-
-すべての操作でS3の匿名・他stateアクセス拒否とTerraform排他を実検証します。workflow間は`foundation-state`で排他し、実行中の操作を自動キャンセルしません。importとapplyの直前に最新mainを再取得し、古いSHAでは変更しません。
-
-state・plan・Terraform診断ログはrunnerの`.private/`内だけで扱い、artifactへ保存しません。公開結果は許可されたリソースの識別子と操作だけです。失敗時は段階を報告し、必要なら権限を持つ担当者が下記ローカル手順で診断します。stateバックアップは作りません。
-
-## ローカル検証
-
-```sh
-mise trust mise.toml
-mise install
-mise exec -- pnpm install --frozen-lockfile
-mise exec -- pnpm test
-mise exec -- terraform fmt -check -recursive
-mise exec -- terraform -chdir=terraform/foundation init -backend=false -lockfile=readonly
-mise exec -- terraform -chdir=terraform/foundation validate
-mise exec -- terraform -chdir=terraform/foundation test
-```
-
-Node.js 24.21.0、pnpm 12.5.1、Terraform 1.16.3をmiseで選択します。依存とproviderはlockfileで固定します。mock成功は実際のR2互換性の証明ではありません。
-
-## 初期投入する資格情報
-
-R2は利用登録と規約への同意が必要です。Standardの無料枠内を基本とし、超過は従量課金になります。契約の変更・費用発生の判断は利用者が行います。
-
-| 用途 | 必要な権限と保存先 |
-| --- | --- |
-| バケット作成・Terraform設定 | 対象accountだけのWorkers R2 Storage Write。ローカルの`.private/r2-admin.json`へ`CLOUDFLARE_API_TOKEN`として保存 |
-| foundationのstate操作 | foundationバケットだけのObject Read & Write。`.private/foundation.json`へ`AWS_ACCESS_KEY_ID`・`AWS_SECRET_ACCESS_KEY`として保存 |
-| apexのstate操作 | apexバケットだけの別のObject Read & Write資格情報。apex側で管理し、通常のアプリ配信へ渡さない |
-
-R2のS3資格情報はバケット作成後に、対象バケットを限定して作成します。通常のS3資格情報でバケット設定の変更は行いません。R2のObject Read & Writeはバケット内の現行state・lockも変更可能なので、prefix単位に権限が分離できているとは扱いません。[^r2-tokens]
-
-JSONファイルは環境変数名と秘密値の文字列の対応だけを持たせ、ディレクトリを0700、ファイルを0600にします。秘密値をチャット、Git、公開ログへ貼りません。`with-secrets.mjs`はJSONを環境変数へ読み、シェルとして評価しません。
-
-## バケット作成とimport
-
-まず対象一覧だけを確認します。このコマンドはAPIを呼びません。
-
-```sh
-mise exec -- node scripts/bootstrap.mjs
-```
-
-R2登録と管理トークンの投入後に実行します。
-
-```sh
-mise exec -- node scripts/with-secrets.mjs .private/r2-admin.json node scripts/bootstrap.mjs --apply
-```
-
-作成ごとに`.private/bootstrap-receipt.json`へaccount・バケット名・作成日時を保存します。既存バケットはreceiptと一致しなければ拒否します。receipt紛失、作成直後の応答消失、バケット再作成を自動的に「所有済み」と扱いません。実際の所有元を確認してから復旧してください。
-
-foundation限定S3資格情報を用意し、実際のTerraform排他を先に確認します。使い捨ての`validation/`キーにだけstateを書き、別applyとの競合と正常なlock解放を確認します。[^state-lock]
-
-```sh
-mise exec -- node scripts/with-secrets.mjs .private/foundation.json node scripts/verify-lock.mjs foundation
-mise exec -- node scripts/with-secrets.mjs .private/foundation.json terraform -chdir=terraform/foundation init -reconfigure
-```
-
-管理トークンとfoundation S3資格情報を合わせた、owner-onlyの`.private/foundation-iac.json`を用意します。各バケットを一度ずつimportします。すでにimport済みのものは重ねてimportしません。
-
-```sh
-mise exec -- node scripts/with-secrets.mjs .private/foundation-iac.json terraform -chdir=terraform/foundation import 'cloudflare_r2_bucket.state["foundation"]' 'a1f28decfde7c9df1884714e574d2059/daiksudme-tfstate-foundation/default'
-mise exec -- node scripts/with-secrets.mjs .private/foundation-iac.json terraform -chdir=terraform/foundation import 'cloudflare_r2_bucket.state["domains"]' 'a1f28decfde7c9df1884714e574d2059/daiksudme-tfstate-domains/default'
-mise exec -- node scripts/with-secrets.mjs .private/foundation-iac.json terraform -chdir=terraform/foundation import 'cloudflare_r2_bucket.state["family"]' 'a1f28decfde7c9df1884714e574d2059/daiksudme-tfstate-family/default'
-mise exec -- node scripts/with-secrets.mjs .private/foundation-iac.json terraform -chdir=terraform/foundation import 'cloudflare_r2_bucket.state["apex"]' 'a1f28decfde7c9df1884714e574d2059/daiksudme-tfstate-apex/default'
-```
-
-foundationのstateはこの時点からR2へ保存されます。r2.dev設定はproviderがimportをサポートしないため、初回planで無効化・管理します。
 
 ## planとapply
 
 ```sh
-mise exec -- node scripts/with-secrets.mjs .private/foundation-iac.json terraform -chdir=terraform/foundation plan -out=../../.private/foundation.tfplan > .private/plan.log 2>&1
-mise exec -- node scripts/with-secrets.mjs .private/foundation-iac.json node scripts/state.mjs apply foundation .private/foundation.tfplan
+gh workflow run foundation.yml --repo daiksudme/.infra --ref main -f operation=plan
+gh workflow run foundation.yml --repo daiksudme/.infra --ref main -f operation=apply
+gh run list --repo daiksudme/.infra --workflow foundation.yml
 ```
 
-planはローカルの保護された作業場所で確認します。公開のCIログやartifactへアップロードしません。`TF_DATA_DIR`・`TF_CLI_ARGS*`による実行環境の上書きは拒否します。applyは選択中のworkspaceが`default`であること、同じbackend・ロック検証記録を確認し、削除・無関係なリソース・公開設定を拒否します。適用ログは`.private/`だけに残し、Terraformの失敗を成功扱いしません。
+初回applyにバケットのimportも含まれます。独立したimport操作はありません。再実行時の取り込み済み判定はTerraformが行います。applyは同じジョブで生成した保存planを使い、直前に最新mainを照合します。
 
-stateはR2の現行データだけを管理します。独自のバックアップ、世代保存、保持ロック、lifecycle、日次ジョブは設けません。現行stateと`.tflock`の上書き・削除はTerraformが行います。
+標準の`use_lockfile`と`prevent_destroy`、workflowの`foundation-state`排他を使います。バックアップと独自の実ロック・アクセス拒否試験は設けません。[^state-lock]
 
-## 実環境のアクセス検証
+planは差分の有無だけを表示します。本文・バイナリ・state・診断ログはrunner内の非公開作業場所だけで扱い、ログやartifactへ公開しません。失敗・中断を成功扱いせず、再確認もActionsから行います。
+
+## 検証とメンテナンス
+
+PRとmain pushの`Verify`でfmt・validate・native mock testを実行します。ローカルではTerraformを実行しません。
 
 ```sh
-mise exec -- node scripts/with-secrets.mjs .private/foundation-iac.json node scripts/verify-state.mjs foundation
+gh workflow run verify.yml --repo daiksudme/.infra --ref main -f operation=check
+gh workflow run verify.yml --repo daiksudme/.infra --ref main -f operation=format
+gh workflow run verify.yml --repo daiksudme/.infra --ref main -f operation=lock
 ```
 
-匿名アクセス拒否、他の3バケットへのアクセス拒否、自分の使い捨てデータの書込・読戻し・削除を確認します。実stateを書き換えず、検証用データだけを削除します。apexも自分のバケット限定資格情報で実検証し、共通stateへアクセスしません。family向けのアプリ運用は別途準備します。
-
-`.private/`のロック検証記録はローカルの確認記録であり、署名付きの証明ではありません。Issueには実行結果・対象版・時刻を記録し、ファイルの存在だけで実検証済みと扱いません。
+`format`と`lock`は変更されたTerraformソース／provider lockfileの差分だけを`terraform-maintenance` artifactへ保存します。`gh run download`で取得してPRへ取り込みます。stateやplanは含めません。Secretsは使用しません。mock成功は実環境の実行成功とは区別します。
 
 [^r2-tokens]: Cloudflare公式のR2資格情報とバケット制限。
-[^state-lock]: Terraform公式S3 backend。R2との実互換性は使い捨てstateによる排他試験で確認する。
+[^state-lock]: Terraform S3 backendの標準排他ロック。
