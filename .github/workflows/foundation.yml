@@ -49,7 +49,7 @@ jobs:
           PRIVATE_DIR="$RUNNER_TEMP/foundation-private"
           umask 077
           mkdir -p "$PRIVATE_DIR"
-          test -n "$CLOUDFLARE_API_TOKEN" && test -n "$AWS_ACCESS_KEY_ID" && test -n "$AWS_SECRET_ACCESS_KEY"
+          : "${CLOUDFLARE_API_TOKEN:?}" "${AWS_ACCESS_KEY_ID:?}" "${AWS_SECRET_ACCESS_KEY:?}"
           test "$GITHUB_SHA" = "$(gh api "repos/$GITHUB_REPOSITORY/git/ref/heads/main" --jq .object.sha)"
           terraform init -reconfigure -lockfile=readonly > "$PRIVATE_DIR/init.log" 2>&1 || { echo 'Terraform init failed; diagnostics are private.'; exit 1; }
           code=0
