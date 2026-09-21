@@ -61,3 +61,5 @@ mainへの統合後はVerify成功に連動してplan・保存planのapply・再
 PRとmainの共通concurrencyは`queue: max`を指定する。既定の待機1件を置き換える動作を避け、待機中applyを後続PRから保護する。GitHubの上限は待機100件であり、上限超過の取消しは成功にせず実行結果で確認する。[^actions-queue]
 
 [^actions-queue]: GitHub Actionsのqueue: maxと待機上限。
+
+actionlint 1.7.12はqueue属性に未対応のため、対象2ファイルの当該未知キー診断だけを設定で除外する。値はGitHub公式仕様のmaxに固定し、GitHub側のworkflow構文検証と合わせて確認する。他の構文検査は無効にしない。
