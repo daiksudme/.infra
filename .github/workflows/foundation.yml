@@ -44,6 +44,7 @@ jobs:
           AWS_SECRET_ACCESS_KEY: ${{ secrets.R2_SECRET_ACCESS_KEY }}
         run: |
           set -euo pipefail
+          case "$OPERATION" in plan|apply) ;; *) echo "Choose plan or apply"; exit 1 ;; esac
           export TF_DATA_DIR="$RUNNER_TEMP/foundation-data"
           PRIVATE_DIR="$RUNNER_TEMP/foundation-private"
           umask 077
