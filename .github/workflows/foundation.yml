@@ -3,9 +3,8 @@ on:
   workflow_dispatch:
     inputs:
       operation:
-        description: Import existing buckets, inspect a plan, or apply a validated plan
         type: choice
-        options: [import, plan, apply]
+        options: [plan, apply]
         default: plan
         required: true
 permissions:
@@ -19,20 +18,48 @@ jobs:
     environment: foundation-operations
     runs-on: ubuntu-24.04
     timeout-minutes: 20
+    env:
+      TF_INPUT: 'false'
+      TF_IN_AUTOMATION: 'true'
+      TF_WORKSPACE: default
+      TF_DATA_DIR: ${{ runner.temp }}/foundation-data
+      PRIVATE_DIR: ${{ runner.temp }}/foundation-private
+    defaults:
+      run:
+        shell: bash
+        working-directory: terraform/foundation
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           ref: ${{ github.sha }}
           persist-credentials: false
-      - uses: jdx/mise-action@c2a87611a18de5b3828c5652fe268e992400cb5c # v4.3.0
+      - uses: hashicorp/setup-terraform@dfe3c3f87815947d99a8997f908cb6525fc44e9e # v4.0.1
         with:
-          version: 2026.9.11
-      - run: pnpm install --frozen-lockfile
-      - name: Manage foundation resources
-        run: node scripts/foundation.mjs "$OPERATION"
+          terraform_version: 1.16.3
+          terraform_wrapper: false
+      - name: Plan and optionally apply
         env:
           OPERATION: ${{ inputs.operation }}
           GH_TOKEN: ${{ github.token }}
           CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
           AWS_ACCESS_KEY_ID: ${{ secrets.R2_ACCESS_KEY_ID }}
           AWS_SECRET_ACCESS_KEY: ${{ secrets.R2_SECRET_ACCESS_KEY }}
+        run: |
+          set -euo pipefail
+          umask 077
+          mkdir -p "$PRIVATE_DIR"
+          test -n "$CLOUDFLARE_API_TOKEN" && test -n "$AWS_ACCESS_KEY_ID" && test -n "$AWS_SECRET_ACCESS_KEY"
+          test "$GITHUB_SHA" = "$(gh api "repos/$GITHUB_REPOSITORY/git/ref/heads/main" --jq .object.sha)"
+          terraform init -reconfigure -lockfile=readonly > "$PRIVATE_DIR/init.log" 2>&1 || { echo 'Terraform init failed; diagnostics are private.'; exit 1; }
+          code=0
+          terraform plan -detailed-exitcode -out="$PRIVATE_DIR/plan" > "$PRIVATE_DIR/plan.log" 2>&1 || code=$?
+          case "$code" in
+            0) echo 'Terraform plan: no changes.' ;;
+            2) echo 'Terraform plan: changes present (including any initial imports).' ;;
+            *) echo 'Terraform plan failed; diagnostics are private.'; exit "$code" ;;
+          esac
+          if [[ "$OPERATION" == apply ]]; then
+            test "$GITHUB_SHA" = "$(gh api "repos/$GITHUB_REPOSITORY/git/ref/heads/main" --jq .object.sha)"
+            terraform apply "$PRIVATE_DIR/plan" > "$PRIVATE_DIR/apply.log" 2>&1 || { echo 'Terraform apply failed; diagnostics are private.'; exit 1; }
+            echo 'Terraform apply completed.'
+          fi

@@ -30,34 +30,22 @@ Cloudflareのdaiksudアカウントを使い、Standardの無料枠内を基本�
 
 ## 決定
 
-Terraform 1.16.3、Cloudflare provider 5.25.0を固定する。Node.js・pnpm・Terraformはmiseで導入する。実ロックとアクセス権限の検証はAWS SDK v3の固定版をS3互換クライアントとして使い、AWSのリソースやアカウントは作らない。
+Terraform 1.16.3とCloudflare provider 5.25.0を固定する。TerraformはGitHub Actions上だけで実行し、公式setup-terraformのwrapperは無効にする。検証・整形・provider lock更新もActionsで行う。
 
-R2のバケットをstateごとに分離し、各S3資格情報を一つのバケットへ限定する。r2.devは無効、Custom Domainは作らない。相手のstateをremote_stateで参照しない。
+4つの非公開バケットとバケット限定資格情報、S3 backendの`use_lockfile`、`prevent_destroy`を維持する。r2.devは無効、Custom Domainは作らず、共通stateを各サイトから参照しない。[^terraform-s3]
 
-S3 backendのuse_lockfileを有効にする。R2には条件付きPutObjectがあるが、仕様の一致だけでTerraformの実互換性を保証せず、並行applyの拒否と解放を実測してから通常applyへ進む。[^r2-compatibility] [^terraform-s3]
+取り込みは固定account・バケット名に対応するTerraformの`import`ブロックで宣言する。初回applyと再実行の判定はTerraformに任せる。独自の所有日時照合・state解析・plan全属性検査・取り込みループは持たない。
 
-stateはR2の現行データだけを管理する。独自のバックアップ、世代保存、保持ロック、lifecycle、日次ジョブは設けない。Terraformの排他ロックは維持する。
+main限定・承認必須Environment、workflowの排他、変更直前の最新main確認を使う。planの差分有無だけを公開し、本文・state・診断ログはrunner内で扱う。バックアップ、世代保存、保持ロック、lifecycle、日次ジョブは設けない。
 
-## 初回構築と変更
+## 検証と更新履歴
 
-bootstrapは必要なバケットだけを作り、作成日時をreceiptへ保存する。未知の同名バケット、receiptと不一致のバケット、公開されたバケットを勝手に取り込まない。
+CIではTerraformのnative mock testと標準検証を行う。R2の条件付きPutObjectへの対応[^r2-compatibility]を前提に標準ロックを使用するが、専用の実競合・アクセス拒否試験は行わない。CI成功と実import/apply成功は分けて記録する。
 
-foundation backendへ直接initし、作成済みバケットをimportする。stateをGitで中継しない。以後は保存済みplan・backend・workspace・排他の前提を検査してapplyする。失敗終了を保持し、公開ログへstateやplanを出さない。
+2026-09-21: 初期案の30日保持・90日保存とR2 Bucket locks[^r2-locks]を採用対象から外した。その後、標準機能中心の構成へ変更し、自作JavaScript・毎回の実ロック／権限試験・検証証明ファイルも廃止した。
 
-作成済みバケットの取り込みと通常変更はGitHub Actionsの手動workflowで行う。main限定・承認必須のEnvironmentに管理トークンとfoundation限定S3資格情報を置く。作成日時を含む所有メタデータはコードに保存し、実リソースと照合する。state内の既存IDも検査し、未取り込み分だけをimportする。各変更直前の最新main確認と、workflowの排他・Terraformのロックを併用する。
-
-検証はvalidation/の使い捨てデータで実施する。実stateを書き換えず、force-unlockや強制state pushを自動実行しない。
-
-## 実装と検証の境界
-
-この契約はapexに必要な保管基盤を対象にする。familyのGoogle認証・個別Allow・Access、DNS・Custom Domainは変更しない。.infra #2・#3のfamily向け未完了条件は残す。
-
-単体テストとTerraform mockは実環境の代用ではない。R2の利用登録・バケット限定資格情報の投入後、匿名拒否・他state拒否・ロック・使い捨てデータの読書きを確認して結果を記録する。設定・CLI/provider版や権限が変わった場合は関連する実検証をやり直す。
-
-## 決定の更新
-
-2026-09-21: 初期構成を簡素化するため、当初の世代別バックアップ・30日保持ロック・90日保存を採用対象から外した。R2 Bucket locks[^r2-locks]は使用せず、state保存とTerraformの排他を維持する。
+familyのアプリ認証、DNSとCustom Domainはこの変更に含めない。
 
 [^r2-compatibility]: R2のS3 API対応表。条件付きPutObjectを参照。
-[^terraform-s3]: Terraform S3 backendのuse_lockfileと必要な権限。
-[^r2-locks]: R2 Bucket locksのprefix・保持期間・lifecycleとの優先関係。
+[^terraform-s3]: Terraform S3 backendのuse_lockfile。
+[^r2-locks]: 初期案で参照したR2 Bucket locks。現行構成では採用しない。
