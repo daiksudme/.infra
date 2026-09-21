@@ -9,7 +9,11 @@ cat > "$WORK/gh" <<'GH'
 #!/usr/bin/env bash
 set -euo pipefail
 case "$2" in
- */pulls/7) cat "$FIXTURES/pr.json" ;;
+ */pulls/7)
+   [[ ${FAIL_API:-0} == 0 ]] || exit 1
+   if [[ ${RACE:-0} == 1 && -f "$FIXTURES/read" ]]; then jq '.head.sha = "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"' "$FIXTURES/pr.json"; else cat "$FIXTURES/pr.json"; fi
+   touch "$FIXTURES/read" ;;
+
  */check-runs*) cat "$FIXTURES/checks.json" ;;
  */reviews*) if [[ $* == *APPROVE* ]]; then touch "$FIXTURES/approved"; else echo '[]'; fi ;;
  *) exit 1 ;;
@@ -18,7 +22,7 @@ GH
 chmod +x "$WORK/gh"
 export PATH="$WORK:$PATH"
 valid() {
- rm -f "$WORK/approved"
+ rm -f "$WORK/approved" "$WORK/read"
  printf '{"state":"open","draft":false,"user":{"login":"daiksud","id":155234749},"base":{"ref":"main","repo":{"full_name":"daiksudme/.infra"}},"head":{"sha":"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"}}' > "$WORK/pr.json"
  printf '{"check_runs":[{"id":2,"name":"verify","head_sha":"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa","status":"completed","conclusion":"success","app":{"id":15368}}]}' > "$WORK/checks.json"
 }
@@ -42,4 +46,9 @@ cp "$ROOT/.github/scripts/approve.sh" "$WORK/repo/.github/scripts/approve.sh"
 printf '[]' > "$WORK/repo/.github/required-checks.json"
 if bash "$WORK/repo/.github/scripts/approve.sh"; then echo 'Empty checks were accepted' >&2; exit 1; fi
 test ! -f "$WORK/approved"
+for condition in RACE FAIL_API; do
+ valid
+ if env "$condition=1" bash "$ROOT/.github/scripts/approve.sh"; then echo 'Concurrent push or API failure was accepted' >&2; exit 1; fi
+ test ! -f "$WORK/approved"
+done
 echo 'Approval eligibility cases passed.'
