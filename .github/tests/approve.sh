@@ -3,6 +3,7 @@ set -euo pipefail
 ROOT=$(cd "$(dirname "$0")/../.." && pwd)
 WORK=$(mktemp -d); trap 'rm -rf "$WORK"' EXIT
 export FIXTURES=$WORK GITHUB_REPOSITORY=daiksudme/.infra GITHUB_EVENT_NAME=pull_request_target
+export GITHUB_SHA=cccccccccccccccccccccccccccccccccccccccc
 export GITHUB_EVENT_PATH=$WORK/event.json
 printf '{"pull_request":{"number":7}}' > "$GITHUB_EVENT_PATH"
 cat > "$WORK/gh" <<'GH'
@@ -11,9 +12,11 @@ set -euo pipefail
 case "$2" in
  */pulls/7)
    [[ ${FAIL_API:-0} == 0 ]] || exit 1
-   if [[ ${RACE:-0} == 1 && -f "$FIXTURES/read" ]]; then jq '.head.sha = "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"' "$FIXTURES/pr.json"; else cat "$FIXTURES/pr.json"; fi
+   if [[ ${RETARGET:-0} == 1 && -f "$FIXTURES/read" ]]; then jq '.base.ref = "other"' "$FIXTURES/pr.json"; elif [[ ${RACE:-0} == 1 && -f "$FIXTURES/read" ]]; then jq '.head.sha = "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"' "$FIXTURES/pr.json"; else cat "$FIXTURES/pr.json"; fi
    touch "$FIXTURES/read" ;;
 
+ */git/ref/heads/main) echo "${MAIN_SHA:-$GITHUB_SHA}" ;;
+ */compare/*) echo "${MERGE_BASE:-$GITHUB_SHA}" ;;
  */check-runs*) cat "$FIXTURES/checks.json" ;;
  */reviews*) if [[ $* == *APPROVE* ]]; then touch "$FIXTURES/approved"; else echo '[]'; fi ;;
  *) exit 1 ;;
@@ -46,9 +49,14 @@ cp "$ROOT/.github/scripts/approve.sh" "$WORK/repo/.github/scripts/approve.sh"
 printf '[]' > "$WORK/repo/.github/required-checks.json"
 if bash "$WORK/repo/.github/scripts/approve.sh"; then echo 'Empty checks were accepted' >&2; exit 1; fi
 test ! -f "$WORK/approved"
-for condition in RACE FAIL_API; do
+for condition in RACE FAIL_API RETARGET; do
  valid
  if env "$condition=1" bash "$ROOT/.github/scripts/approve.sh"; then echo 'Concurrent push or API failure was accepted' >&2; exit 1; fi
+ test ! -f "$WORK/approved"
+done
+for condition in MAIN_SHA MERGE_BASE; do
+ valid
+ if env "$condition=old" bash "$ROOT/.github/scripts/approve.sh"; then echo 'Stale main was accepted' >&2; exit 1; fi
  test ! -f "$WORK/approved"
 done
 echo 'Approval eligibility cases passed.'
