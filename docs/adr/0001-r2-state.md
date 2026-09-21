@@ -6,6 +6,8 @@ status: stable
 decision_status: accepted
 date: 2026-09-20
 sources:
+  - id: actions-queue
+    resource: https://docs.github.com/en/actions/how-tos/write-workflows/choose-when-workflows-run/control-workflow-concurrency
   - id: r2-compatibility
     resource: https://developers.cloudflare.com/r2/api/s3/api/
   - id: r2-locks
@@ -55,3 +57,7 @@ familyのアプリ認証、DNSとCustom Domainはこの変更に含めない。
 PRのTerraform planとmainのapplyをActions上で直列化する。実planはdaiksudが管理する同repoの最新PRだけに資格情報を渡し、外部PRには渡さない。planは外部データソースやproviderを実行し得るため、資格情報なしのVerify成功だけを信頼の根拠にしない。
 
 mainへの統合後はVerify成功に連動してplan・保存planのapply・再planを行う。EnvironmentのRequired reviewersは廃止し、main限定条件・標準stateロック・最新SHA確認・資格情報の分離を維持する。PRには差分の有無だけを報告し、state・plan本文・診断ログを公開しない。
+
+PRとmainの共通concurrencyは`queue: max`を指定する。既定の待機1件を置き換える動作を避け、待機中applyを後続PRから保護する。GitHubの上限は待機100件であり、上限超過の取消しは成功にせず実行結果で確認する。[^actions-queue]
+
+[^actions-queue]: GitHub Actionsのqueue: maxと待機上限。

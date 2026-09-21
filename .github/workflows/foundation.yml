@@ -17,6 +17,7 @@ permissions:
 concurrency:
   group: foundation-state
   cancel-in-progress: false
+  queue: max
 jobs:
   foundation:
     if: >-
