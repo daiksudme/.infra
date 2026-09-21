@@ -44,6 +44,8 @@ bootstrapは必要なバケットだけを作り、作成日時をreceiptへ保�
 
 foundation backendへ直接initし、作成済みバケットをimportする。stateをGitで中継しない。以後は保存済みplan・backend・workspace・排他の前提を検査してapplyする。失敗終了を保持し、公開ログへstateやplanを出さない。
 
+作成済みバケットの取り込みと通常変更はGitHub Actionsの手動workflowで行う。main限定・承認必須のEnvironmentに管理トークンとfoundation限定S3資格情報を置く。作成日時を含む所有メタデータはコードに保存し、実リソースと照合する。state内の既存IDも検査し、未取り込み分だけをimportする。各変更直前の最新main確認と、workflowの排他・Terraformのロックを併用する。
+
 検証はvalidation/の使い捨てデータで実施する。実stateを書き換えず、force-unlockや強制state pushを自動実行しない。
 
 ## 実装と検証の境界
