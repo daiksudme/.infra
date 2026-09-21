@@ -12,21 +12,22 @@ set -euo pipefail
 case "$2" in
  */pulls/7)
    [[ ${FAIL_API:-0} == 0 ]] || exit 1
-   if [[ ${RETARGET:-0} == 1 && -f "$FIXTURES/read" ]]; then jq '.base.ref = "other"' "$FIXTURES/pr.json"; elif [[ ${RACE:-0} == 1 && -f "$FIXTURES/read" ]]; then jq '.head.sha = "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"' "$FIXTURES/pr.json"; else cat "$FIXTURES/pr.json"; fi
+   if [[ ${POST_RACE:-0} == 1 && -f "$FIXTURES/approved" ]]; then jq '.head.sha = "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"' "$FIXTURES/pr.json"; elif [[ ${RETARGET:-0} == 1 && -f "$FIXTURES/read" ]]; then jq '.base.ref = "other"' "$FIXTURES/pr.json"; elif [[ ${RACE:-0} == 1 && -f "$FIXTURES/read" ]]; then jq '.head.sha = "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"' "$FIXTURES/pr.json"; else cat "$FIXTURES/pr.json"; fi
    touch "$FIXTURES/read" ;;
 
  */git/ref/heads/main) echo "${MAIN_SHA:-$GITHUB_SHA}" ;;
- */rules/branches/main) printf '[{"type":"pull_request","parameters":{"dismiss_stale_reviews_on_push":%s}}]' "${DISMISS_STALE:-true}" ;;
+ */rules/branches/main) printf '[{"type":"pull_request","parameters":{"dismiss_stale_reviews_on_push":%s}},{"type":"required_status_checks","parameters":{"strict_required_status_checks_policy":%s}}]' "${DISMISS_STALE:-true}" "${STRICT_CHECKS:-true}" ;;
  */compare/*) echo "${MERGE_BASE:-$GITHUB_SHA}" ;;
  */check-runs*) cat "$FIXTURES/checks.json" ;;
- */reviews*) if [[ $* == *APPROVE* ]]; then touch "$FIXTURES/approved"; else echo '[]'; fi ;;
+ */reviews/42/dismissals) touch "$FIXTURES/dismissed" ;;
+ */reviews*) if [[ $* == *APPROVE* ]]; then touch "$FIXTURES/approved"; echo 42; else echo '[]'; fi ;;
  *) exit 1 ;;
 esac
 GH
 chmod +x "$WORK/gh"
 export PATH="$WORK:$PATH"
 valid() {
- rm -f "$WORK/approved" "$WORK/read"
+ rm -f "$WORK/approved" "$WORK/read" "$WORK/dismissed"
  printf '{"state":"open","draft":false,"user":{"login":"daiksud","id":155234749},"base":{"ref":"main","repo":{"full_name":"daiksudme/.infra"}},"head":{"sha":"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"}}' > "$WORK/pr.json"
  printf '{"check_runs":[{"id":2,"name":"verify","head_sha":"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa","status":"completed","conclusion":"success","app":{"id":15368}}]}' > "$WORK/checks.json"
 }
@@ -70,4 +71,10 @@ export GITHUB_EVENT_NAME=pull_request_target
 printf '{"pull_request":{"number":7}}' > "$GITHUB_EVENT_PATH"
 if DISMISS_STALE=false bash "$ROOT/.github/scripts/approve.sh"; then echo 'Missing stale-review protection was accepted' >&2; exit 1; fi
 test ! -f "$WORK/approved"
+valid
+if STRICT_CHECKS=false bash "$ROOT/.github/scripts/approve.sh"; then echo 'Missing strict checks accepted' >&2; exit 1; fi
+test ! -f "$WORK/approved"
+valid
+if POST_RACE=1 bash "$ROOT/.github/scripts/approve.sh"; then echo 'Post-submit push accepted' >&2; exit 1; fi
+test -f "$WORK/dismissed"
 echo 'Approval eligibility cases passed.'

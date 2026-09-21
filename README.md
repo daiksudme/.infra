@@ -78,3 +78,5 @@ GitHub Actionsの「Allow GitHub Actions to create and approve pull requests」�
 自動Approveは、管理者本人が投稿したPRのCI結果に基づく承認です。VerifyはPR内のworkflow・テスト変更も検証対象として実行し、所有者による検証定義の変更を禁止しません。独立した内容レビューの代わりにはせず、変更のレビュー・必須CI・未解決指摘の確認を統合前に行います。承認処理自体はmainのコードから実行し、最新mainを含まないPRや承認直前に対象ブランチが変わったPRを拒否します。
 
 GitHubのreview作成APIはHEAD一致を条件とする書込を提供しないため、自動承認前にmainの実Rulesetで古い承認の無効化（dismiss_stale_reviews_on_push）が有効であることを確認します。保護がない場合はApproveしません。
+
+承認前にはstrictな必須チェックも確認し、main更新後の未検証状態でマージできないようにします。投稿したreviewのIDを取得してHEAD・対象・mainを再確認し、途中変更や確認失敗があればそのreviewを取り消して失敗にします。
