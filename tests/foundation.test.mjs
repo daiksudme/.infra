@@ -65,3 +65,13 @@ test('a stale guard or unsafe plan prevents apply', async () => {
   await assert.rejects(manageFoundation('apply', ops), /stale/);
   await assert.rejects(manageFoundation('apply', { ...ops, plan: async () => ({ resource_changes: [{ type: 'cloudflare_r2_bucket', change: { actions: ['delete'] } }] }) }), /plan/);
 });
+
+test('does not recreate a bucket lost after import or expose an unexpected plan address', async () => {
+  const { manageFoundation } = await import('../lib/foundation.mjs');
+  const ops = { inspect: async () => ({ values: { root_module: { resources: Object.keys(config.buckets).map(bucket) } } }), guard: async () => {}, apply: () => assert.fail('must not apply') };
+  const item = bucket('foundation');
+  for (const resource of [
+    { address: item.address, type: item.type, change: { actions: ['create'], after: { ...item.values, storage_class: 'Standard' } } },
+    { address: 'cloudflare_r2_managed_domain.unexpected', type: 'cloudflare_r2_managed_domain', change: { actions: ['create'], after: { account_id: config.account_id, bucket_name: config.buckets.foundation, enabled: false } } },
+  ]) await assert.rejects(manageFoundation('plan', { ...ops, plan: async () => ({ resource_changes: [resource] }) }), /plan/);
+});

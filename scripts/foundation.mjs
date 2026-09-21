@@ -1,6 +1,5 @@
-import { readFileSync, mkdirSync, openSync, closeSync } from 'node:fs';
+import { readFileSync, mkdirSync, openSync, closeSync, appendFileSync } from 'node:fs';
 import { execFileSync, spawnSync } from 'node:child_process';
-import { appendFileSync } from 'node:fs';
 import { required } from '../lib/config.mjs';
 import { bucketApi } from '../lib/cloudflare.mjs';
 import { checkBackend, checkTerraformEnvironment } from '../lib/backend.mjs';
