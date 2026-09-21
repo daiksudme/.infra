@@ -5,7 +5,7 @@ ROOT=$(cd "$(dirname "$0")/../.." && pwd)
 case "$GITHUB_EVENT_NAME" in
   pull_request_target) number=$(jq -er '.pull_request.number' "$GITHUB_EVENT_PATH") ;;
   workflow_run)
-    number=$(jq -er '.workflow_run | select(.conclusion == "success") | .pull_requests | select(length == 1) | .[0].number' "$GITHUB_EVENT_PATH") || exit 0 ;;
+    number=$(jq -er '.workflow_run | select(.event == "pull_request" and .path == ".github/workflows/verify.yml" and .conclusion == "success") | .pull_requests | select(length == 1) | .[0].number' "$GITHUB_EVENT_PATH") || exit 0 ;;
   *) exit 1 ;;
 esac
 [[ $number =~ ^[1-9][0-9]*$ ]]
@@ -14,6 +14,9 @@ jq -e --arg repo "$GITHUB_REPOSITORY" 'select(.state == "open" and .draft == fal
 sha=$(jq -er '.head.sha | select(test("^[a-f0-9]{40}$"))' <<< "$pr")
 [[ $GITHUB_SHA == "$(gh api "repos/$GITHUB_REPOSITORY/git/ref/heads/main" --jq .object.sha)" ]]
 [[ $GITHUB_SHA == "$(gh api "repos/$GITHUB_REPOSITORY/compare/$GITHUB_SHA...$sha" --jq .merge_base_commit.sha)" ]]
+if [[ $GITHUB_EVENT_NAME == workflow_run ]]; then
+  [[ $sha == "$(jq -er '.workflow_run.head_sha' "$GITHUB_EVENT_PATH")" ]] || exit 0
+fi
 checks=$(gh api "repos/$GITHUB_REPOSITORY/commits/$sha/check-runs?per_page=100")
 required=$(jq -er 'select(type == "array" and length > 0 and all(.[]; type == "string" and length > 0)) | .[]' "$ROOT/.github/required-checks.json")
 while IFS= read -r name; do

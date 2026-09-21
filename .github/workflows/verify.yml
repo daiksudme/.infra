@@ -16,6 +16,7 @@ concurrency:
   cancel-in-progress: true
 jobs:
   verify:
+    name: ${{ github.event_name == 'workflow_dispatch' && 'terraform-maintenance' || 'verify' }}
     runs-on: ubuntu-24.04
     timeout-minutes: 10
     steps:

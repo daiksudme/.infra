@@ -37,7 +37,7 @@ for change in '.draft = true' '.user.login = "contributor"' '.state = "closed"' 
  bash "$ROOT/.github/scripts/approve.sh"
  test ! -f "$WORK/approved"
 done
-for change in '.check_runs[0].conclusion = "failure"' '.check_runs = []' '.check_runs[0].app.id = 1' '.check_runs[0].head_sha = "old"' '.check_runs[0].status = "in_progress"'; do
+for change in '.check_runs[0].conclusion = "failure"' '.check_runs = []' '.check_runs[0].name = "terraform-maintenance"' '.check_runs[0].app.id = 1' '.check_runs[0].head_sha = "old"' '.check_runs[0].status = "in_progress"'; do
  valid; jq "$change" "$WORK/checks.json" > "$WORK/next"; mv "$WORK/next" "$WORK/checks.json"
  bash "$ROOT/.github/scripts/approve.sh"
  test ! -f "$WORK/approved"
@@ -59,4 +59,9 @@ for condition in MAIN_SHA MERGE_BASE; do
  if env "$condition=old" bash "$ROOT/.github/scripts/approve.sh"; then echo 'Stale main was accepted' >&2; exit 1; fi
  test ! -f "$WORK/approved"
 done
+valid
+export GITHUB_EVENT_NAME=workflow_run
+printf '{"workflow_run":{"event":"workflow_dispatch","path":".github/workflows/verify.yml","conclusion":"success","head_sha":"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa","pull_requests":[{"number":7}]}}' > "$GITHUB_EVENT_PATH"
+bash "$ROOT/.github/scripts/approve.sh"
+test ! -f "$WORK/approved"
 echo 'Approval eligibility cases passed.'
