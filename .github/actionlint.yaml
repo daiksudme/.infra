@@ -1,0 +1,10 @@
+# actionlint 1.7.12 predates the documented queue property.
+# GitHub validates this property; keep all other syntax checks enabled.
+# https://docs.github.com/en/actions/how-tos/write-workflows/choose-when-workflows-run/control-workflow-concurrency
+paths:
+  .github/workflows/foundation.yml:
+    ignore:
+      - '^unexpected key "queue" for "concurrency" section\.'
+  .github/workflows/pr-foundation.yml:
+    ignore:
+      - '^unexpected key "queue" for "concurrency" section\.'

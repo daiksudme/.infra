@@ -1,0 +1,47 @@
+name: Foundation Terraform
+description: Run a private, locked Terraform plan and optionally apply that saved plan.
+inputs:
+  operation:
+    required: true
+    description: plan or apply
+  directory:
+    default: terraform/foundation
+    description: Terraform source directory
+runs:
+  using: composite
+  steps:
+    - uses: hashicorp/setup-terraform@dfe3c3f87815947d99a8997f908cb6525fc44e9e # v4.0.1
+      with:
+        terraform_version: 1.16.3
+        terraform_wrapper: false
+    - shell: bash
+      env:
+        OPERATION: ${{ inputs.operation }}
+        DIRECTORY: ${{ inputs.directory }}
+        TF_INPUT: 'false'
+        TF_IN_AUTOMATION: 'true'
+        TF_WORKSPACE: default
+      run: |
+        set -euo pipefail
+        case "$OPERATION" in plan|apply) ;; *) exit 1 ;; esac
+        [[ -z ${PR_NUMBER:-} || $OPERATION == plan ]]
+        export TF_DATA_DIR="$RUNNER_TEMP/foundation-data"
+        PRIVATE_DIR="$RUNNER_TEMP/foundation-private"
+        umask 077
+        mkdir -p "$PRIVATE_DIR"
+        : "${CLOUDFLARE_API_TOKEN:?}" "${AWS_ACCESS_KEY_ID:?}" "${AWS_SECRET_ACCESS_KEY:?}"
+        bash .github/scripts/foundation-guard.sh
+        terraform -chdir="$DIRECTORY" init -reconfigure -lockfile=readonly > "$PRIVATE_DIR/init.log" 2>&1 || { echo 'Terraform init failed; diagnostics are private.'; exit 1; }
+        code=0
+        terraform -chdir="$DIRECTORY" plan -detailed-exitcode -out="$PRIVATE_DIR/plan" > "$PRIVATE_DIR/plan.log" 2>&1 || code=$?
+        case "$code" in
+          0) echo 'Terraform plan: no changes.' ;;
+          2) echo 'Terraform plan: changes present (including any initial imports).' ;;
+          *) echo 'Terraform plan failed; diagnostics are private.'; exit "$code" ;;
+        esac
+        bash .github/scripts/foundation-guard.sh
+        if [[ "$OPERATION" == apply && "$code" == 2 ]]; then
+          terraform -chdir="$DIRECTORY" apply "$PRIVATE_DIR/plan" > "$PRIVATE_DIR/apply.log" 2>&1 || { echo 'Terraform apply failed; diagnostics are private.'; exit 1; }
+          terraform -chdir="$DIRECTORY" plan -detailed-exitcode > "$PRIVATE_DIR/verify.log" 2>&1 || { echo 'Post-apply plan failed or has changes; diagnostics are private.'; exit 1; }
+          echo 'Terraform apply completed; post-apply plan has no changes.'
+        fi

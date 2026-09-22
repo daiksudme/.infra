@@ -33,20 +33,26 @@ gh secret set R2_ACCESS_KEY_ID --repo daiksudme/.infra --env foundation-operatio
 gh secret set R2_SECRET_ACCESS_KEY --repo daiksudme/.infra --env foundation-operations
 ```
 
-Environmentはmain限定・daiksud承認必須・管理者bypass無効です。未作成の場合だけ、管理権限を持つ`gh`認証で次を実行します。既存の保護は上書きしません。
+Environmentはmain限定・管理者bypass無効です。Required reviewersは設定せず、通常の適用に承認操作を要求しません。初期作成と設定の更新は管理権限を持つ`gh`認証で行い、branch policyは未作成の場合だけ追加します。
 
 ```sh
 gh api repos/daiksudme/.infra/environments/foundation-operations --method PUT --input .github/foundation-environment.json
 gh api repos/daiksudme/.infra/environments/foundation-operations/deployment-branch-policies --method POST --input .github/foundation-branch.json
 ```
 
-## planとapply
+## PRのplanとmainのapply
+
+mainへのpushでVerifyが成功すると、Foundationが同じSHAでplan・apply・再planを自動実行します。差分なしならapplyを省略します。PRではPR foundationが最新コミットへ`terraform-plan`を報告します。daiksudが同repoのブランチから作成し、最新mainを含む検証済みPRだけ実planします。他の投稿者・forkは資格情報を使わず失敗として報告し、必要ならdaiksudが管理ブランチへ取り込んでPRを作成します。
+
+手動のplan/applyも維持します。
 
 ```sh
 gh workflow run foundation.yml --repo daiksudme/.infra --ref main -f operation=plan
 gh workflow run foundation.yml --repo daiksudme/.infra --ref main -f operation=apply
 gh run list --repo daiksudme/.infra --workflow foundation.yml
 ```
+
+mainの適用とPRのplanは共通のfoundation-stateで排他します。PRはapplyせず、実行前後に投稿者・head・mainを照合します。
 
 初回applyにバケットのimportも含まれます。独立したimport操作はありません。再実行時の取り込み済み判定はTerraformが行います。applyは同じジョブで生成した保存planを使い、直前に最新mainを照合します。
 
