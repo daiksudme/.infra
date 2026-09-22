@@ -16,6 +16,7 @@ concurrency:
   cancel-in-progress: true
 jobs:
   verify:
+    name: ${{ github.event_name == 'workflow_dispatch' && 'terraform-maintenance' || 'verify' }}
     runs-on: ubuntu-24.04
     timeout-minutes: 10
     steps:
@@ -38,6 +39,8 @@ jobs:
           name: terraform-maintenance
           path: ${{ runner.temp }}/terraform-maintenance.patch
           retention-days: 7
+      - run: bash .github/tests/approve.sh
+      - run: shellcheck .github/scripts/*.sh .github/tests/*.sh
       - run: terraform fmt -check -recursive
       - run: terraform -chdir=terraform/foundation init -backend=false -lockfile=readonly
       - run: terraform -chdir=terraform/foundation validate

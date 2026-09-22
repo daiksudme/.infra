@@ -68,3 +68,15 @@ gh workflow run verify.yml --repo daiksudme/.infra --ref main -f operation=lock
 
 [^r2-tokens]: Cloudflare公式のR2資格情報とバケット制限。
 [^state-lock]: Terraform S3 backendの標準排他ロック。
+
+## PRの承認とmain保護
+
+CODEOWNERSはdaiksudです。mainのRulesetによるPR・承認1件・Code Ownerレビュー・必須検証・未解決スレッド解消の必須化は、所有者本人のPRが標準ルールでマージ可能になることを実PRで確認してから完了とします。Rulesetの定義・実適用はこの自動承認workflowの導入と分け、条件不成立時にbypassや独自の承認方式へ切り替えません。
+
+GitHub Actionsの「Allow GitHub Actions to create and approve pull requests」を有効にします。Owner approvalはmainのコードからメタデータだけを読み、daiksudの非Draft PRの最新SHAについて`.github/required-checks.json`の検証成功後にApproveします。別の投稿者や失敗・未実行の検証は承認しません。実設定の適用とCode Owner本人のPRのマージ可否は、CIとは別に実PRで確認します。
+
+自動Approveは、管理者本人が投稿したPRのCI結果に基づく承認です。VerifyはPR内のworkflow・テスト変更も検証対象として実行し、所有者による検証定義の変更を禁止しません。独立した内容レビューの代わりにはせず、変更のレビュー・必須CI・未解決指摘の確認を統合前に行います。承認処理自体はmainのコードから実行し、最新mainを含まないPRや承認直前に対象ブランチが変わったPRを拒否します。
+
+GitHubのreview作成APIはHEAD一致を条件とする書込を提供しないため、自動承認前にmainの実Rulesetで古い承認の無効化（dismiss_stale_reviews_on_push）が有効であることを確認します。保護がない場合はApproveしません。
+
+承認前にはstrictな必須チェックも確認し、main更新後の未検証状態でマージできないようにします。投稿したreviewのIDを取得してHEAD・対象・mainを再確認し、途中変更や確認失敗があればそのreviewを取り消して失敗にします。

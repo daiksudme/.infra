@@ -1,0 +1,27 @@
+name: Owner approval
+on:
+  pull_request_target:
+    types: [ready_for_review]
+    branches: [main]
+  workflow_run:
+    workflows: [Verify, PR foundation]
+    types: [completed]
+permissions:
+  contents: read
+  pull-requests: write
+  checks: read
+concurrency:
+  group: approve-${{ github.event.pull_request.number || github.event.workflow_run.pull_requests[0].number || github.run_id }}
+  cancel-in-progress: false
+jobs:
+  approve:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: ${{ github.sha }}
+          persist-credentials: false
+      - run: bash .github/scripts/approve.sh
+        env:
+          GH_TOKEN: ${{ github.token }}
